@@ -14,10 +14,12 @@ import {
   setResultToGlobalState,
   setDisabled,
   gameDataReset,
+  setSelectedSeed,
 } from '../../actions';
 import { findSeedGroup } from '../../utils/moveSeed';
 import GameChat from '../GameChat';
 import { disableEmptyHouses } from '../../helpers';
+import store from '../../store';
 import './index.css';
 
 const NUMBER = {
@@ -57,24 +59,31 @@ class SideBoard extends Component {
     });
   }
 
+  componentDidUpdate(prevProps, prevState) {
+    // let currentResults = this.props.dieResult;
+    // if(currentResults.length){
+    //   this.moveSeed();
+    // }
+  }
+
   checkIfPlayerHasValidMoves = (results) => {
     const { playerTurn } = this.props;
     const groups = findSeedGroup(this.props.gameData, `H${playerTurn.substr(1, 1)}`);
     const seedGroup = sortBy(groups, (o) => o.movesLeft).reverse();
     // sorting and reversing here to first test and remove seeds that are still
-    let canPlay = 0;
+    let cantPlay = 0;
     const resultCollection = results.map(result => result.value);
     const resultsSum = resultCollection.reduce((a, b) => a + b, 0);
     const seedOutside = seedGroup.filter(group => group.movesLeft < 56).length;
 
     Object.keys(seedGroup).forEach(group => {
       if (seedGroup[group].position === 'still' && !resultCollection.includes(6)) {
-        canPlay += 1;
+        cantPlay += 1;
       } else if (seedOutside < 2 && resultsSum > seedGroup[group].movesLeft) {
-        canPlay += 1;
+        cantPlay += 1;
       }
     });
-    if (canPlay === 4) {
+    if (cantPlay === 4) {
       Toastr.info('No valid moves. Changing turn.', 'No Moves')
       setTimeout(() => {
         this.endTurn();
@@ -91,24 +100,70 @@ class SideBoard extends Component {
 
     const preResults = this.state.results;
     const resultObjects = results.map(result => {
-      return { id: shortId.generate(), value: result, selected: false };
+      return { id: shortId.generate(), value: result, selected: true };
     });
     const resultsConcat = [...preResults, ...resultObjects];
     this.props.setResultToGlobalState(resultsConcat);
 
     if (results[0] !== 6 || results[1] !== 6) {
-      this.props.dieCastComplete();
+      store.dispatch(this.props.dieCastComplete());
       this.checkIfPlayerHasValidMoves(resultsConcat)
+      this.checkBotMove(resultsConcat)
     }
+  }
+
+  checkBotMove = (results) => {
+    //const results = this.state.results;
+    if(!results.length){
+      return;
+    }
+    const { playerTurn } = this.props;
+    const playerNumber = playerTurn.substr(1, 1);
+    //if(playerNumber !== "1"){
+      const groups = findSeedGroup(this.props.gameData, `H${playerNumber}`);
+      const resultCollection = results.map(result => result.value);
+
+      const seedGroup = Object.keys(groups);
+      for(let i = 0; i< seedGroup.length; i++) {
+        let seed = seedGroup[i];
+        if (groups[seed].movesLeft !== undefined){
+          if (groups[seed].movesLeft < 56) {
+            store.dispatch(setSelectedSeed(seed));
+            let stateCopy = Object.assign({},
+              this.state,
+              { selectedSeed: seed, results }
+            );
+            this.moveSeedWithState(stateCopy);
+            return
+          } else if (groups[seed].position === 'still' && resultCollection.includes(6)) {
+            store.dispatch(setSelectedSeed(seed));
+            let stateCopy = Object.assign({},
+              this.state,
+              { selectedSeed: seed,  results }
+            );
+            this.moveSeedWithState(stateCopy);
+            return
+          }
+        }
+      }
+      Toastr.info('Aak Bot move', 'No valid move for bot')
+    // } else {
+    //   Toastr.info('Aak Player move', 'Please select your move')
+    // }
   }
 
   rollDice = () => {
     const { dieCast } = this.props;
     if (dieCast) return;
+    let values = [6,6]
+    if (Math.random() > 0.5){
+      values = [1,1]
+    }
     const options = {
       element: this.state.element,
       numberOfDice: 2,
       callback: this.setDieRollResult,
+      values
     };
     rollADie(options);
   }
@@ -129,8 +184,12 @@ class SideBoard extends Component {
   }
 
   moveSeed = () => {
-    const { results, repeatCast } = this.state;
-    const selectedSeed = this.props.selectedSeed;
+    this.moveSeedWithState(this.state);
+  }
+
+  moveSeedWithState = (stateCopy) => {
+    const { results, repeatCast, selectedSeed } = stateCopy;
+    // const selectedSeed = this.props.selectedSeed;
     const indexes = [];
     const selectedMoves = results.filter((result, index) => {
       if (result.selected) {
@@ -233,8 +292,8 @@ class SideBoard extends Component {
         <GameChat />
         <hr className="hRule" />
         <div className="reset-buttons">
-          <button type="button" className="btn btn-warning" onClick={this.newGame}>New Gane</button>
-          <button type="button" className="btn btn-warning" onClick={this.resetGame}>Restart Gane</button>
+          <button type="button" className="btn btn-warning" onClick={this.newGame}>New Game</button>
+          <button type="button" className="btn btn-warning" onClick={this.resetGame}>Restart Game</button>
         </div>
         <hr className="hRule" />
         <div className="playMoveContainer">
@@ -284,6 +343,7 @@ function mapDispatchToProps(dispatch) {
     setResultToGlobalState,
     setDisabled,
     gameDataReset,
+    setSelectedSeed,
   }, dispatch);
 }
 
